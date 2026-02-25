@@ -1,5 +1,6 @@
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
+import java.net.InetAddress;
 
 public class Receiver {
     public static void main(String[] args) {
@@ -27,10 +28,18 @@ public class Receiver {
                 System.out.println("Seq: " + packet.getSeqNum());
                 System.out.println("Length: " + packet.getLength());
 
-                if (packet.getLength() > 0) {
-                    System.out.println("Payload bytes received: " + packet.getPayload().length);
+                if (packet.getType() == DSPacket.TYPE_SOT) {
+                    System.out.println("SOT packet received, Sending ACK...");
+                    DSPacket ackPacket = new DSPacket(DSPacket.TYPE_ACK, 0, null);
+                    byte[] ackBytes = ackPacket.toBytes();
+                    InetAddress senderAddress = udppacket.getAddress();
+                    int senderPort = udppacket.getPort();
+
+                    DatagramPacket ackUdpPacket = new DatagramPacket(ackBytes, ackBytes.length, senderAddress, senderPort);
+                    socket.send(ackUdpPacket);
+
+                    System.out.println("ACK sent to " + senderAddress + ":" + senderPort);
                 }
-                System.out.println("-----------------------------------");
 
             }
         } catch (Exception e) {
