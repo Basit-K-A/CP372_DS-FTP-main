@@ -1,24 +1,33 @@
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
-//import java.net.InetAddress;
+import java.net.InetAddress;
 import java.io.FileOutputStream;
 import java.util.Arrays;
 
 public class Receiver {
     public static void main(String[] args) {
-        if(args.length < 1) {
-            System.out.println("Usage: java Receiver <rcv_data_port>");
+        if(args.length != 5) {
+            System.out.println("Usage: java Receiver <sender_ip> <sender_ack_port> <rcv_data_port> <output_file> <RN>");
             return;
         }
 
-        int rcvDataPort = Integer.parseInt(args[0]);
+        String senderIP = args[0];
+        int senderAckPort = Integer.parseInt(args[1]);
+        int rcvDataPort = Integer.parseInt(args[2]);
+        String outputFile = args[3];
+        int rn = Integer.parseInt(args[4]);
+
+        System.out.println("Receiver listening on port " + rcvDataPort + ", sending ACKs to " + senderIP + ":" + senderAckPort + ", RN=" + rn);
 
         try {
             DatagramSocket socket = new DatagramSocket(rcvDataPort);
+            InetAddress senderAddr = InetAddress.getByName(senderIP);
+            int ackCount = 0; // for ChaosEngine.shouldDrop
+
             System.out.println("Receiver is listening on port " + rcvDataPort + "...");
 
             // Open output file and track expected sequence outside the receive loop
-            FileOutputStream fos = new FileOutputStream("output.bin");
+            FileOutputStream fos = new FileOutputStream(outputFile);
             int expectedSeq = 1; // First DATA packet is Seq 1
 
             while (true) {
@@ -40,21 +49,21 @@ public class Receiver {
                     System.out.println("SOT received — sending ACK(0) and resetting state.");
                     // Reset output file/state for a new transfer
                     fos.close();
-                    fos = new FileOutputStream("output.bin");
+                    fos = new FileOutputStream(outputFile);
                     expectedSeq = 1;
 
                     DSPacket ackPacket = new DSPacket(DSPacket.TYPE_ACK, 0, null);
-                    sendAck(socket, udppacket, ackPacket);
+                    sendAck(socket, senderAddr, senderAckPort, ackPacket, ackCount++, rn);
                     continue;
                 }
 
                 if (packet.getType() == DSPacket.TYPE_EOT) {
                     System.out.println("EOT received — sending ACK and finishing.");
                     DSPacket ackPacket = new DSPacket(DSPacket.TYPE_ACK, packet.getSeqNum(), null);
-                    sendAck(socket, udppacket, ackPacket);
+                    sendAck(socket, senderAddr, senderAckPort, ackPacket, ackCount++, rn);
                     fos.close();
-                    System.out.println("Transfer complete. Output saved to output.bin");
-                    break;
+                    System.out.println("Transfer complete. Output saved to " + outputFile);
+                    return;
                 }
 
                 if (packet.getType() == DSPacket.TYPE_DATA) {
@@ -65,7 +74,7 @@ public class Receiver {
                         System.out.println("DATA received in order: " + seq);
 
                         DSPacket ackPacket = new DSPacket(DSPacket.TYPE_ACK, seq, null);
-                        sendAck(socket, udppacket, ackPacket);
+                        sendAck(socket, senderAddr, senderAckPort, ackPacket, ackCount++, rn);
 
                         expectedSeq = (expectedSeq + 1) % 128;
 
@@ -74,7 +83,7 @@ public class Receiver {
 
                         int lastInOrder = (expectedSeq - 1 + 128) % 128;
                         DSPacket ackPacket = new DSPacket(DSPacket.TYPE_ACK, lastInOrder, null);
-                        sendAck(socket, udppacket, ackPacket);
+                        sendAck(socket, senderAddr, senderAckPort, ackPacket, ackCount++, rn);
                     }
                 }
             }
@@ -82,20 +91,25 @@ public class Receiver {
     }
 }
 
-private static void sendAck(DatagramSocket socket,
-                            DatagramPacket receivedPacket,
-                            DSPacket ackPacket) throws Exception {
+private static void sendAck(DatagramSocket socket, InetAddress senderAddr, int senderAckPort,
+                            DSPacket ackPacket, int ackCount, int rn) throws Exception {
+
+    if (ChaosEngine.shouldDrop(ackCount, rn)) {
+        System.out.println("ACK dropped (chaos): " + ackPacket.getSeqNum());
+        return;
+    }
 
     byte[] ackBytes = ackPacket.toBytes();
 
     DatagramPacket ackUDP = new DatagramPacket(
             ackBytes,
             ackBytes.length,
-            receivedPacket.getAddress(),
-            receivedPacket.getPort()
+            senderAddr,
+            senderAckPort
     );
 
     socket.send(ackUDP);
+    System.out.println("ACK sent: " + ackPacket.getSeqNum());
 }
 
 }
