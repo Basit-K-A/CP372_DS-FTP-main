@@ -59,9 +59,39 @@ public class Receiver {
 
                 if (packet.getType() == DSPacket.TYPE_EOT) {
                     System.out.println("EOT received — sending ACK and finishing.");
-                    DSPacket ackPacket = new DSPacket(DSPacket.TYPE_ACK, packet.getSeqNum(), null);
-                    sendAck(socket, senderAddr, senderAckPort, ackPacket, ackCount++, rn);
                     fos.close();
+                    
+                    DSPacket ackPacket = new DSPacket(DSPacket.TYPE_ACK, packet.getSeqNum(), null);
+                    
+                    // Retry sending EOT ACK until it succeeds
+                    boolean ackSent = false;
+                    int retries = 0;
+                    int maxRetries = 10;
+                    
+                    while (!ackSent && retries < maxRetries) {
+                        if (!ChaosEngine.shouldDrop(ackCount, rn)) {
+                            byte[] ackBytes = ackPacket.toBytes();
+                            DatagramPacket ackUDP = new DatagramPacket(
+                                    ackBytes,
+                                    ackBytes.length,
+                                    senderAddr,
+                                    senderAckPort
+                            );
+                            socket.send(ackUDP);
+                            System.out.println("EOT ACK sent: " + ackPacket.getSeqNum());
+                            ackSent = true;
+                        } else {
+                            System.out.println("EOT ACK dropped (chaos): " + ackPacket.getSeqNum() + ", retrying...");
+                            Thread.sleep(100); // Small delay before retry to simulate timeout
+                        }
+                        ackCount++;
+                        retries++;
+                    }
+                    
+                    if (!ackSent) {
+                        System.out.println("Warning: Could not send EOT ACK after " + maxRetries + " attempts");
+                    }
+                    
                     System.out.println("Transfer complete. Output saved to " + outputFile);
                     return;
                 }
