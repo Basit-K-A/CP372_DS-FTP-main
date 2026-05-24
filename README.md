@@ -79,7 +79,7 @@ For detailed instructions on running specific components of the project, please 
 
 ## Contributing
 
-This is a course project. If you have suggestions or improvements, feel free to open an issue or submit a pull request.
+This is a course project, and is not maintained.
 
 ## Notes
 
